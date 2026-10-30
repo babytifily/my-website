@@ -32,8 +32,64 @@
   <script>
     const file=document.getElementById('file'),drop=document.getElementById('drop'),preview=document.getElementById('preview'),dropText=document.getElementById('dropText'),generate=document.getElementById('generate'),empty=document.getElementById('empty'),art=document.getElementById('art'),ready=document.getElementById('ready'),again=document.getElementById('again'),modal=document.getElementById('modal');
     document.getElementById('heroStart').onclick=()=>document.getElementById('how').scrollIntoView({behavior:'smooth'});
-    drop.onclick=()=>file.click(); file.onchange=()=>{if(file.files[0]){const r=new FileReader();r.onload=e=>{preview.src=e.target.result;preview.style.display='block';dropText.style.display='none';generate.disabled=false;generate.textContent='生成宝宝想象照'};r.readAsDataURL(file.files[0])}};
-    function make(){empty.style.display='none';generate.style.display='none';art.style.display='block';ready.style.display='block'} generate.onclick=make;again.onclick=make;
+    let selectedImage, previewUrl;
+    const localHost = ['localhost', '127.0.0.1'].includes(location.hostname);
+    const endpoint = localHost ? '/api/generate' : '';
+    empty.setAttribute('aria-live', 'polite');
+    if (!endpoint) empty.textContent = '在线生图服务尚未上线，暂时无法生成照片。';
+    function selectImage(image) {
+      if (!image) return;
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(image.type) || image.size > 10 * 1024 * 1024) {
+        empty.textContent = '请选择 10MB 以内的 JPG、PNG 或 WEBP 图片。';
+        return;
+      }
+      selectedImage = image;
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      previewUrl = URL.createObjectURL(image);
+      preview.src = previewUrl;
+      preview.style.display = 'block';
+      dropText.style.display = 'none';
+      art.style.display = ready.style.display = 'none';
+      empty.style.display = 'grid';
+      generate.style.display = 'inline-block';
+      generate.disabled = !endpoint;
+      generate.textContent = endpoint ? '生成宝宝想象照' : '在线生图服务待上线';
+      empty.textContent = endpoint ? '图片已选择，可以开始生成。' : '在线生图服务尚未上线，暂时无法生成照片。';
+    }
+    file.onchange = () => selectImage(file.files[0]);
+    drop.ondragover = event => event.preventDefault();
+    drop.ondrop = event => { event.preventDefault(); selectImage(event.dataTransfer.files[0]); };
+    async function make() {
+      if (!selectedImage || !endpoint || generate.disabled) return;
+      generate.disabled = again.disabled = file.disabled = true;
+      generate.style.display = 'inline-block';
+      generate.textContent = '正在生成，请稍候…';
+      empty.style.display = 'grid';
+      empty.textContent = '正在创作宝宝想象照，可能需要几分钟。';
+      try {
+        const form = new FormData();
+        form.append('image', selectedImage);
+        const response = await fetch(endpoint, { method: 'POST', body: form, signal: AbortSignal.timeout(200000) });
+        const result = await response.json();
+        if (!response.ok || !result.imageUrl) throw new Error(result.error || '未收到生成图片，请稍后再试。');
+        const photo = new Image();
+        photo.alt = 'AI 生成的宝宝趣味想象照';
+        photo.style.cssText = 'display:block;width:100%;height:auto;border-radius:4px';
+        photo.src = result.imageUrl;
+        await photo.decode();
+        art.replaceChildren(photo);
+        art.className = '';
+        art.style.cssText = 'display:block;max-width:360px;margin:20px auto';
+        empty.style.display = generate.style.display = 'none';
+        ready.style.display = 'block';
+      } catch (error) {
+        empty.textContent = error.name === 'TimeoutError' ? '等待超时，请稍后再试。' : error.message;
+      } finally {
+        generate.disabled = again.disabled = file.disabled = false;
+        generate.textContent = '生成宝宝想象照';
+      }
+    }
+    generate.onclick=make;again.onclick=make;
     document.getElementById('heroStart').addEventListener('click',()=>{if(!file.files[0]){}});document.getElementById('close').onclick=()=>modal.style.display='none';
   </script>
 </div>
